@@ -4,7 +4,6 @@
   "extends": "./base.json",
   "compilerOptions": {
     "lib": ["es2022", "DOM", "DOM.Iterable"],
-    "jsx": "react-jsx",
-    "noEmit": true
+    "jsx": "react-jsx"
   }
 }

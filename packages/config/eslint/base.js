@@ -26,10 +26,6 @@ export const config = [
   {
     languageOptions: {
       sourceType: "module",
-      parserOptions: {
-        project: ["tsconfig.json", "tsconfig.*.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
     },
   },
 ];

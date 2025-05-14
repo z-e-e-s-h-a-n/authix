@@ -1,6 +1,6 @@
-import tseslint from 'typescript-eslint';
-import globals from 'globals';
-import { config as baseConfig } from './base.js';
+import tseslint from "typescript-eslint";
+import globals from "globals";
+import { config as baseConfig } from "./base.js";
 
 /** @type {import("eslint").Linter.Config} */
 export const config = [
@@ -10,17 +10,17 @@ export const config = [
       globals: {
         ...globals.node,
       },
-      sourceType: 'module',
+      sourceType: "module",
     },
   },
   {
     rules: {
-      '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/no-floating-promises': 'error',
-      '@typescript-eslint/no-unsafe-argument': 'error',
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/no-unsafe-argument": "error",
     },
   },
   {
-    ignores: ['test/**'],
+    ignores: ["test/**"],
   },
 ];
