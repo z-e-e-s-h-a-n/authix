@@ -1,16 +1,10 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-enum UserScope {
-  platform
-  project
+  url      = env("DB_URI")
 }
 
 enum UserRole {
@@ -19,56 +13,68 @@ enum UserRole {
   member
 }
 
-enum OtpType {
-  token
-  otp
-}
-
 enum OtpPurpose {
   signup
   login
   resetPassword
   verifyEmail
   verifyPhone
+  mfa
+}
+
+enum OtpStatus {
+  pending
+  verified
+  expired
 }
 
 model User {
-  id              String    @id @default(cuid())
-  scope           UserScope @default(project)
-  email           String?   @unique
-  phone           String?   @unique
-  username        String?   @unique
+  id              String   @id @default(ulid())
+  email           String?  @unique
+  phone           String?  @unique
+  username        String?  @unique
   password        String?
   firstName       String?
   lastName        String?
-  isEmailVerified Boolean   @default(false)
-  isPhoneVerified Boolean   @default(false)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  isEmailVerified Boolean  @default(false)
+  isPhoneVerified Boolean  @default(false)
+  activeOrgId     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   memberships   Membership[]
   ownedOrgs     Organization[] @relation("OrgOwner")
   ownedProjects Project[]      @relation("ProjectOwner")
   refreshTokens RefreshToken[]
-  otpSessions   OtpSession[]
+  otps          Otp[]
+  sessions      Session[]
+  activeOrg     Organization?  @relation("ActiveOrg", fields: [activeOrgId], references: [id])
+
+  @@index([email])
+  @@index([phone])
+  @@index([username])
 }
 
 model Organization {
-  id        String   @id @default(cuid())
+  id        String   @id @default(ulid())
   name      String
   slug      String   @unique
   ownerId   String
+  metadata  Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
-  owner    User         @relation("OrgOwner", fields: [ownerId], references: [id])
-  members  Membership[]
-  projects Project[]
+  owner       User         @relation("OrgOwner", fields: [ownerId], references: [id])
+  members     Membership[]
+  projects    Project[]
+  sessions    Session[]
+  activeUsers User[]       @relation("ActiveOrg")
+
+  @@index([ownerId])
 }
 
 model Project {
-  id        String   @id @default(cuid())
+  id        String   @id @default(ulid())
   name      String
   slug      String   @unique
   ownerId   String
@@ -76,64 +82,129 @@ model Project {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
-  owner        User            @relation("ProjectOwner", fields: [ownerId], references: [id])
-  organization Organization    @relation(fields: [orgId], references: [id])
-  members      Membership[]
-  settings     ProjectSetting?
+  owner         User            @relation("ProjectOwner", fields: [ownerId], references: [id])
+  organization  Organization    @relation(fields: [orgId], references: [id])
+  members       Membership[]
+  settings      ProjectSetting?
+  Session       Session[]
+  ApiKey        ApiKey[]
+  OAuthProvider OAuthProvider[]
+
+  @@index([orgId])
 }
 
 model Membership {
-  id        String   @id @default(cuid())
+  id        String   @id @default(ulid())
   userId    String
   orgId     String?
   projectId String?
   role      UserRole @default(member)
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  // Relations
   user         User          @relation(fields: [userId], references: [id])
   organization Organization? @relation(fields: [orgId], references: [id])
   project      Project?      @relation(fields: [projectId], references: [id])
 
   @@unique([userId, orgId])
   @@unique([userId, projectId])
+  @@index([userId])
+  @@index([orgId])
+  @@index([projectId])
 }
 
 model ProjectSetting {
-  id            String   @id @default(cuid())
-  projectId     String   @unique
-  signInOptions Json
-  jwtConfig     Json
-  mfaEnabled    Boolean  @default(false)
-  createdAt     DateTime @default(now())
+  id               String   @id @default(ulid())
+  projectId        String   @unique
+  allowedProviders String[]
+  jwtTemplate      String?
+  mfaEnabled       Boolean  @default(false)
+  metadata         Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  // Relations
   project Project @relation(fields: [projectId], references: [id])
 }
 
-model RefreshToken {
-  id          String   @id @default(cuid())
-  token       String   @unique
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  ip          String
-  userAgent   String
-  lastUsed    DateTime @default(now())
-  createdAt   DateTime @default(now())
-  expiresAt   DateTime
-  isActive    Boolean  @default(true)
-  blacklisted Boolean  @default(false)
+model Session {
+  id        String   @id @default(ulid())
+  userId    String
+  orgId     String?
+  projectId String?
+  token     String   @unique
+  lastUsed  DateTime @default(now())
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id])
+  organization Organization? @relation(fields: [orgId], references: [id])
+  project      Project?      @relation(fields: [projectId], references: [id])
+
+  @@index([userId])
+  @@index([orgId])
+  @@index([projectId])
 }
 
-model OtpSession {
-  id        String     @id @default(cuid())
+model RefreshToken {
+  id          String    @id @default(ulid())
+  token       String    @unique
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  ip          String
+  userAgent   String
+  lastUsed    DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  isActive    Boolean   @default(true)
+  blacklisted Boolean   @default(false)
+
+  @@index([userId])
+}
+
+model Otp {
+  id        String     @id @default(ulid())
   userId    String
   user      User       @relation(fields: [userId], references: [id])
-  type      OtpType
   purpose   OtpPurpose
   secret    String
+  attempts  Int        @default(0)
+  status    String     @default("pending")
   expireAt  DateTime   @default(dbgenerated("now() + interval '10 minutes'"))
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
+
+  @@index([userId])
+}
+
+model ApiKey {
+  id        String    @id @default(ulid())
+  key       String    @unique
+  prefix    String
+  projectId String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+  revoked   Boolean   @default(false)
+  project   Project   @relation(fields: [projectId], references: [id])
+}
+
+model OAuthProvider {
+  id           String   @id @default(ulid())
+  projectId    String
+  provider     String
+  clientId     String   @unique
+  clientSecret String
+  redirectUris String[]
+  scopes       String[]
+  project      Project  @relation(fields: [projectId], references: [id])
+}
+
+model AuditLog {
+  id        String   @id @default(ulid())
+  userId    String?
+  orgId     String?
+  action    String
+  metadata  Json?
+  createdAt DateTime @default(now())
 }
