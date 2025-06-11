@@ -8,8 +8,8 @@ datasource db {
 }
 
 enum UserRole {
-  admin
   owner
+  admin
   member
 }
 
@@ -22,10 +22,15 @@ enum OtpPurpose {
   mfa
 }
 
-enum OtpStatus {
-  pending
-  verified
-  expired
+enum AuditAction {
+  login
+  logout
+  updateProfile
+  createProject
+  deleteProject
+  inviteUser
+  removeUser
+  // Extend as needed
 }
 
 model User {
@@ -34,21 +39,19 @@ model User {
   phone           String?  @unique
   username        String?  @unique
   password        String?
-  firstName       String?
+  firstName       String
   lastName        String?
   isEmailVerified Boolean  @default(false)
   isPhoneVerified Boolean  @default(false)
-  activeOrgId     String?
+  isDeleted       Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   memberships   Membership[]
-  ownedOrgs     Organization[] @relation("OrgOwner")
-  ownedProjects Project[]      @relation("ProjectOwner")
   refreshTokens RefreshToken[]
   otps          Otp[]
-  sessions      Session[]
-  activeOrg     Organization?  @relation("ActiveOrg", fields: [activeOrgId], references: [id])
+  auditLogs     AuditLog[]
+  Organization  Organization[]
 
   @@index([email])
   @@index([phone])
@@ -59,36 +62,34 @@ model Organization {
   id        String   @id @default(ulid())
   name      String
   slug      String   @unique
-  ownerId   String
   metadata  Json?
+  isDeleted Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  owner       User         @relation("OrgOwner", fields: [ownerId], references: [id])
-  members     Membership[]
-  projects    Project[]
-  sessions    Session[]
-  activeUsers User[]       @relation("ActiveOrg")
+  members   Membership[]
+  projects  Project[]
+  auditLogs AuditLog[]
+  User      User[]
 
-  @@index([ownerId])
+  @@index([slug])
 }
 
 model Project {
   id        String   @id @default(ulid())
   name      String
   slug      String   @unique
-  ownerId   String
   orgId     String
+  isDeleted Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  owner         User            @relation("ProjectOwner", fields: [ownerId], references: [id])
-  organization  Organization    @relation(fields: [orgId], references: [id])
-  members       Membership[]
-  settings      ProjectSetting?
-  Session       Session[]
-  ApiKey        ApiKey[]
-  OAuthProvider OAuthProvider[]
+  organization   Organization    @relation(fields: [orgId], references: [id])
+  members        Membership[]
+  settings       ProjectSetting?
+  apiKeys        ApiKey[]
+  oauthProviders OAuthProvider[]
+  auditLogs      AuditLog[]
 
   @@index([orgId])
 }
@@ -126,39 +127,18 @@ model ProjectSetting {
   project Project @relation(fields: [projectId], references: [id])
 }
 
-model Session {
-  id        String   @id @default(ulid())
-  userId    String
-  orgId     String?
-  projectId String?
-  token     String   @unique
-  lastUsed  DateTime @default(now())
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  user         User          @relation(fields: [userId], references: [id])
-  organization Organization? @relation(fields: [orgId], references: [id])
-  project      Project?      @relation(fields: [projectId], references: [id])
-
-  @@index([userId])
-  @@index([orgId])
-  @@index([projectId])
-}
-
 model RefreshToken {
-  id          String    @id @default(ulid())
-  token       String    @unique
+  id          String   @id @default(ulid())
+  token       String   @unique
   userId      String
-  user        User      @relation(fields: [userId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
   ip          String
   userAgent   String
-  lastUsed    DateTime  @default(now())
-  createdAt   DateTime  @default(now())
+  lastUsed    DateTime @default(now())
+  createdAt   DateTime @default(now())
   expiresAt   DateTime
-  revokedAt   DateTime?
-  isActive    Boolean   @default(true)
-  blacklisted Boolean   @default(false)
+  isActive    Boolean  @default(true)
+  blacklisted Boolean  @default(false)
 
   @@index([userId])
 }
@@ -170,7 +150,6 @@ model Otp {
   purpose   OtpPurpose
   secret    String
   attempts  Int        @default(0)
-  status    String     @default("pending")
   expireAt  DateTime   @default(dbgenerated("now() + interval '10 minutes'"))
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
@@ -185,7 +164,6 @@ model ApiKey {
   projectId String
   createdAt DateTime  @default(now())
   expiresAt DateTime?
-  revoked   Boolean   @default(false)
   project   Project   @relation(fields: [projectId], references: [id])
 }
 
@@ -201,10 +179,19 @@ model OAuthProvider {
 }
 
 model AuditLog {
-  id        String   @id @default(ulid())
+  id        String      @id @default(ulid())
   userId    String?
   orgId     String?
-  action    String
+  projectId String?
+  action    AuditAction
   metadata  Json?
-  createdAt DateTime @default(now())
+  createdAt DateTime    @default(now())
+
+  user         User?         @relation(fields: [userId], references: [id])
+  organization Organization? @relation(fields: [orgId], references: [id])
+  project      Project?      @relation(fields: [projectId], references: [id])
+
+  @@index([userId])
+  @@index([orgId])
+  @@index([projectId])
 }
